@@ -21,8 +21,6 @@ fun main() {
     if(!link.isNullOrBlank()){
         loadData(link.toString(),userName,path)
     }
-    for(items in map){
-        println(items)}
 
 }
 enum class OS {

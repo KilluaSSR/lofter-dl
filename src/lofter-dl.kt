@@ -8,100 +8,58 @@ import kotlin.concurrent.thread
 
 fun main() {
     val link = readLine()
-    val map = System.getenv()
-    val userName = map["USER"]
-    val mac_path = "/Users/${userName}/Pictures/lofter爬虫/"
-    val windows_path = "%SystemDrive%\\Users\\%USERPROFILE%\\Downloads\\lofter爬虫"
-    val path = when{
-        checkOS() == OS.WINDOWS -> windows_path
-        checkOS() == OS.MAC ->mac_path
+    val userName = System.getenv()["USER"]
+    val path = when (checkOS()) {
+        OS.WINDOWS -> System.getenv("SystemDrive") + "\\Users\\${System.getProperty("user.name")}\\Downloads\\lofter爬虫"
+        OS.MAC -> "/Users/$userName/Pictures/lofter爬虫/"
         else -> ""
     }
-    if(!checkDir(userName,path)){File(path).mkdir()}
-    if(!link.isNullOrBlank()){
-        loadData(link.toString(),userName,path)
-    }
-
+    if (!File(path).isDirectory) File(path).mkdir()
+    link?.let { loadData(it, path) }
 }
+
 enum class OS {
     WINDOWS, MAC
 }
-fun checkOS():OS?{
-    val os = System.getProperty("os.name").lowercase(Locale.getDefault())
-    return when {
-        os.contains("win") -> {
-            OS.WINDOWS
-        }
-        os.contains("mac") -> {
-            OS.MAC
-        }
-        else -> null
-    }
-}
-fun checkDir(userName: String?,path:String)= File(path).isDirectory
 
-fun loadData(URL:String,userName:String?,path: String){
+fun checkOS(): OS? = when {
+    System.getProperty("os.name").lowercase(Locale.getDefault()).contains("win") -> OS.WINDOWS
+    System.getProperty("os.name").lowercase(Locale.getDefault()).contains("mac") -> OS.MAC
+    else -> null
+}
+
+fun loadData(url: String, path: String) {
     val resultSet = HashSet<String>()
     thread {
-        val url = URL(URL)
-        val connection = url.openConnection() as HttpURLConnection
+        val connection = createConnection(url)
         try {
-            val response = StringBuilder()
-            connection.apply {
-                setRequestProperty("User-Agent","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36")
-                setRequestProperty("Referer",URL)
-                requestMethod = "GET"
-                connectTimeout = 8000
-                readTimeout = 8000
-            }
-            val input = connection.inputStream
-            val reader = BufferedReader(InputStreamReader(input))
-            reader.apply {
-                forEachLine {
-                    response.append(it)
-                }
-            }
+            val response = connection.inputStream.bufferedReader().use { it.readText() }
             val pattern = Pattern.compile("""bigimgsrc="(.*?)(?=\?imageView)""")
-            val matcher = pattern.matcher(response.toString())
+            val matcher = pattern.matcher(response)
             while (matcher.find()) {
                 resultSet.add(matcher.group(1))
             }
-            for(items in resultSet){
-                download(items,userName,path)
+            resultSet.forEach { imageUrl ->
+                download(imageUrl, path)
             }
-
-        }catch (e:Exception){
+        } catch (e: Exception) {
             e.printStackTrace()
-        }finally {
+        } finally {
             connection.disconnect()
         }
     }
 }
-fun download(imageURL:String,userName: String?,path: String) {
-    val imageUrl = imageURL
-    val url = URL(imageUrl)
+
+fun download(imageURL: String, path: String) {
     thread {
-        val connection = url.openConnection() as HttpURLConnection
+        val connection = createConnection(imageURL)
         try {
-            connection.apply {
-                setRequestProperty("User-Agent","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36")
-                setRequestProperty("Referer",imageURL)
-                setRequestProperty("Origin", imageURL)
-                requestMethod = "GET"
-                connectTimeout = 8000
-                readTimeout = 8000
-            }
             val inputStream: InputStream = connection.inputStream
-            val result: Regex = Regex(pattern = "/([^/]+)\$")
-            val outputPath = "${path}"+"${result.find(imageURL)?.value}"
-            val outputStream = FileOutputStream(outputPath)
-            val buffer = ByteArray(4096)
-            var bytesRead: Int
-            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                outputStream.write(buffer, 0, bytesRead)
+            val fileName = imageURL.substringAfterLast("/")
+            val outputPath = "$path$fileName"
+            FileOutputStream(outputPath).use { outputStream ->
+                inputStream.copyTo(outputStream)
             }
-            inputStream.close()
-            outputStream.close()
             println("图片已成功下载到 $outputPath")
         } catch (e: Exception) {
             e.printStackTrace()
@@ -109,4 +67,12 @@ fun download(imageURL:String,userName: String?,path: String) {
             connection.disconnect()
         }
     }
+}
+
+fun createConnection(URL: String): HttpURLConnection = (URL(URL).openConnection() as HttpURLConnection).apply {
+    setRequestProperty("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36")
+    setRequestProperty("Referer", URL)
+    requestMethod = "GET"
+    connectTimeout = 8000
+    readTimeout = 8000
 }
